@@ -3,7 +3,7 @@ from modal import Image, Stub, Volume
 # We first set out configuration variables for our script.
 DATASET_DIR = "/data"
 DATASET_NAME = "gsm8k"
-DATASET_CONFIG = "20220301.en"
+DATASET_CONFIG = "main"
 
 
 # We define our Modal Resources that we'll need
