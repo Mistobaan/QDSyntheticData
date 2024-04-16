@@ -8,19 +8,19 @@ from modal import Image, Secret, Stub, Volume, build, enter, exit, gpu, method
 ## Embedding Containers Configuration
 GPU_CONCURRENCY = 100
 GPU_CONFIG = gpu.A10G()
-MODEL_ID = "BAAI/bge-small-en-v1.5"
+# MODEL_ID = "sentence-transformers/all-mpnet-base-v2" not supported by text-embedding
+MODEL_ID = "nomic-ai/nomic-embed-text-v1.5"
 MODEL_SLUG = MODEL_ID.split("/")[-1]
 BATCH_SIZE = 512
+# see https://github.com/huggingface/text-embeddings-inference?tab=readme-ov-file#docker-images
 DOCKER_IMAGE = (
-    "ghcr.io/huggingface/text-embeddings-inference:86-0.4.0"  # Ampere 86 for A10s.
-    # "ghcr.io/huggingface/text-embeddings-inference:0.4.0" # Ampere 80 for A100s.
-    # "ghcr.io/huggingface/text-embeddings-inference:0.3.0"  # Turing for T4s.
+    "ghcr.io/huggingface/text-embeddings-inference:86-1.2"  # Ampere 86 for A10s.
 )
 
 ## Dataset-Specific Configuration
-DATASET_NAME = "wikipedia"
+DATASET_NAME = "gsm8k"
 DATASET_READ_VOLUME = Volume.from_name(
-    "embedding-wikipedia", create_if_missing=True
+    "embedding-qd-synth", create_if_missing=True
 )
 EMBEDDING_CHECKPOINT_VOLUME = Volume.from_name(
     "checkpoint", create_if_missing=True
@@ -30,7 +30,7 @@ CHECKPOINT_DIR = "/checkpoint"
 SAVE_TO_DISK = True
 
 ## Upload-Specific Configuration
-DATASET_HF_UPLOAD_REPO_NAME = "567-labs/upload-test"
+DATASET_HF_UPLOAD_REPO_NAME = "mistobaan/gsm8k-nomic-embed-v1.5"
 UPLOAD_TO_HF = True
 
 ## HF Text-Embedding Inference specific Configuration
@@ -69,17 +69,17 @@ def spawn_server() -> subprocess.Popen:
                     f"launcher exited unexpectedly with code {retcode}"
                 )
 
-
-tei_image = (
+# Setup the Docker image
+hf_text_embedding_inference_image = (
     Image.from_registry(
-        "ghcr.io/huggingface/text-embeddings-inference:86-0.4.0",
+        DOCKER_IMAGE,
         add_python="3.10",
     )
     .dockerfile_commands("ENTRYPOINT []")
     .pip_install("httpx")
 )
 
-with tei_image.imports():
+with hf_text_embedding_inference_image.imports():
     import numpy as np
 
 
@@ -96,14 +96,12 @@ def generate_chunks_from_dataset(xs, chunk_size: int):
 
     """
     for data in xs:
-        id_ = data["id"]
-        url = data["url"]
-        title = data["title"]
-        text = data["text"]
+        q = data["question"]
+        a = data["answer"]
         for chunk_start in range(0, len(text), chunk_size):
             yield (
-                id_,
-                url,
+                q,
+                a,
                 title,
                 text[chunk_start : chunk_start + chunk_size],
             )
@@ -122,7 +120,7 @@ def generate_batches(xs, batch_size):
 
 @stub.cls(
     gpu=GPU_CONFIG,
-    image=tei_image,
+    image=hf_text_embedding_inference_image,
     concurrency_limit=GPU_CONCURRENCY,
     allow_concurrent_inputs=True,
     retries=3,
@@ -177,8 +175,8 @@ def load_dataset_from_disk(down_scale: float = 0.01):
 
     start = time.perf_counter()
     # Load the dataset as a Hugging Face dataset
-    print(f"Loading dataset from {DATASET_DIR}/wikipedia")
-    dataset = load_from_disk(f"{DATASET_DIR}/wikipedia")
+    print(f"Loading dataset from {DATASET_DIR}/{DATASET_NAME}")
+    dataset = load_from_disk(f"{DATASET_DIR}/{DATASET_NAME}")
     print(f"Dataset loaded in {time.perf_counter()-start:.2f} seconds")
 
     # Extract the total size of the dataset
