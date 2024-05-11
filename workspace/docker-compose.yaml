@@ -1,0 +1,17 @@
+version: '3'
+services:
+  reward_model:
+    build: 
+      context: ./reward_model_server
+    volumes:
+      - ./notebooks:/home/ubuntu/notebooks
+    command: "run_server.sh"
+  jupyter:
+    build: 
+      context: ./jupyter
+    volumes:
+      - ./notebooks:/home/ubuntu/notebooks
+    ports:
+      - 8888:8888
+    container_name: jupyter_notebook
+    command: "start-notebook.py"
